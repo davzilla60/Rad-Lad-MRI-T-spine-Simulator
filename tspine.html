@@ -596,6 +596,8 @@
 .mre-ghost{position:fixed;z-index:100000;width:76px;pointer-events:none;opacity:.85;border:1px solid #5fe08a;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.6);transform:translate(-50%,-50%)}
 #scg-root .mre-cell.is-drop{box-shadow:inset 0 0 0 2px var(--accent);background:#0b1a0e}
 #scg-root .mre-cell.is-nodrop{opacity:.45}
+#scg-root .mre-info{z-index:3;background:#000}
+#scg-root .mre-sq>img:not([src]){visibility:hidden}
 #scg-root .mre-restore{position:absolute;right:5px;top:5px;z-index:4;font-size:9px;letter-spacing:.1em;padding:3px 7px;border:1px solid var(--line);border-radius:4px;background:rgba(10,14,8,.8);color:var(--ink-dim)}
 #scg-root .mre-restore:hover{border-color:var(--accent);color:var(--accent)}
 #scg-root .mre-cell.is-series .mre-lab{color:#ffe08a}
@@ -674,8 +676,8 @@
             <div class="mre-lab"></div><i class="mre-ori t">S</i><i class="mre-ori b">I</i><i class="mre-ori l">R</i><i class="mre-ori r">L</i><div class="mre-lab2"></div></div>
           <div class="mre-cell" data-p="ax"><div class="mre-sq"><canvas width="256" height="256"></canvas><img alt="Axial localiser"><svg viewBox="0 0 256 256" preserveAspectRatio="none"></svg></div>
             <div class="mre-lab"></div><i class="mre-ori t">A</i><i class="mre-ori b">P</i><i class="mre-ori l">R</i><i class="mre-ori r">L</i><div class="mre-lab2"></div></div>
-          <div class="mre-cell" data-p="x"><div class="mre-sq"><canvas width="384" height="384"></canvas></div>
-            <div class="mre-lab"></div><div class="mre-info scg-hidden" id="mreInfo"></div><div class="mre-lab2"></div></div>
+          <div class="mre-cell" data-p="x"><div class="mre-sq"><canvas width="384" height="384"></canvas><img alt="Localiser dropped into the fourth box"><svg viewBox="0 0 256 256" preserveAspectRatio="none"></svg></div>
+            <div class="mre-lab"></div><i class="mre-ori t"></i><i class="mre-ori b"></i><i class="mre-ori l"></i><i class="mre-ori r"></i><div class="mre-info scg-hidden" id="mreInfo"></div><div class="mre-lab2"></div></div>
         </div>
 
         <!-- single-series viewer -->

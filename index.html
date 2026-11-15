@@ -596,6 +596,8 @@
 .mre-ghost{position:fixed;z-index:100000;width:76px;pointer-events:none;opacity:.85;border:1px solid #5fe08a;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.6);transform:translate(-50%,-50%)}
 #scg-root .mre-cell.is-drop{box-shadow:inset 0 0 0 2px var(--accent);background:#0b1a0e}
 #scg-root .mre-cell.is-nodrop{opacity:.45}
+#scg-root .mre-info{z-index:3;background:#000}
+#scg-root .mre-sq>img:not([src]){visibility:hidden}
 #scg-root .mre-restore{position:absolute;right:5px;top:5px;z-index:4;font-size:9px;letter-spacing:.1em;padding:3px 7px;border:1px solid var(--line);border-radius:4px;background:rgba(10,14,8,.8);color:var(--ink-dim)}
 #scg-root .mre-restore:hover{border-color:var(--accent);color:var(--accent)}
 #scg-root .mre-cell.is-series .mre-lab{color:#ffe08a}
@@ -674,8 +676,8 @@
             <div class="mre-lab"></div><i class="mre-ori t">S</i><i class="mre-ori b">I</i><i class="mre-ori l">R</i><i class="mre-ori r">L</i><div class="mre-lab2"></div></div>
           <div class="mre-cell" data-p="ax"><div class="mre-sq"><canvas width="256" height="256"></canvas><img alt="Axial localiser"><svg viewBox="0 0 256 256" preserveAspectRatio="none"></svg></div>
             <div class="mre-lab"></div><i class="mre-ori t">A</i><i class="mre-ori b">P</i><i class="mre-ori l">R</i><i class="mre-ori r">L</i><div class="mre-lab2"></div></div>
-          <div class="mre-cell" data-p="x"><div class="mre-sq"><canvas width="384" height="384"></canvas></div>
-            <div class="mre-lab"></div><div class="mre-info scg-hidden" id="mreInfo"></div><div class="mre-lab2"></div></div>
+          <div class="mre-cell" data-p="x"><div class="mre-sq"><canvas width="384" height="384"></canvas><img alt="Localiser dropped into the fourth box"><svg viewBox="0 0 256 256" preserveAspectRatio="none"></svg></div>
+            <div class="mre-lab"></div><i class="mre-ori t"></i><i class="mre-ori b"></i><i class="mre-ori l"></i><i class="mre-ori r"></i><div class="mre-info scg-hidden" id="mreInfo"></div><div class="mre-lab2"></div></div>
         </div>
 
         <!-- single-series viewer -->
@@ -1326,6 +1328,7 @@ $("scgMarkMini").innerHTML = '<img class="scg-mark-ic" src="'+url("logo_mark")+'
 $("scgLogoBig").src = url("logo_full"); $("scgAchLogo").src = url("logo_mark");
 $("scgT1").src = url("loc_sag"); $("scgT2").src = url("loc_cor"); $("scgT3").src = url("loc_ax");
 ["sag","cor","ax"].forEach(function(p){ CELL[p].img.src = url("loc_"+p); });
+CELL.x.img.style.display = "none";
 function playAchievement(){ achWrap.classList.remove("is-playing"); void achWrap.offsetWidth; achWrap.classList.add("is-playing"); }
 $("scgAchReplay").addEventListener("click", playAchievement);
 
@@ -1342,6 +1345,9 @@ var DEG = 180/Math.PI;
    ANATOMY + PROTOCOL DATA
    ============================================================= */
 var TASKS = ["sag","ax"], PANELS = ["sag","cor","ax"];
+/* the four boxes of the planning grid. Any localiser or completed series can be dragged into any of them. */
+var SLOTS = ["sag","cor","ax","x"], SLOTNAME = { sag:"top-left", cor:"top-right", ax:"bottom-left", x:"bottom-right" };
+var ORI = { sag:["S","I","A","P"], cor:["S","I","R","L"], ax:["A","P","R","L"] };       // top, bottom, left, right
 var TYPE = { sag:"sag", cnt:"sag", lsp:"sag", ax:"ax" };      // cnt / lsp: the extra (C-spine / L-spine) localisers, sagittal images
 var COLORS = { sag:"#f0a35e", cnt:"#6fc3ff", ax:"#5fe08a" };
 var NAME = { sag:"SAG", cor:"COR", ax:"AX", cnt:"C-SP LOC", lsp:"L-SP LOC" };
@@ -1609,18 +1615,26 @@ function logCmd(c){ log("$ "+c,"cmd"); }
 /* =============================================================
    PLANNING OVERLAYS — boxes projected onto each panel's real image plane (SVG units: 256 across the image)
    ============================================================= */
-function panelGeo(p){
+/* what a box shows: a T-spine localiser image, or one slice of an acquired series. Left alone, the first three boxes show
+   their own localiser (SAG / COR / AX) and the fourth shows the preview (null here). */
+function content(p){
   var sw=S.swap[p];
-  if(sw){ var s=SER[sw.id], k=S.acq[sw.id][sw.i]; return { ipp:s.ipp[k], row:s.row, col:s.col, mmu:s.ps*s.cols/256 }; }
-  var L=C.loc[p]; return { ipp:L.ipp, row:L.row, col:L.col, mmu:L.ps*L.cols/256 };
+  if(sw) return sw.loc ? { type:"loc", key:sw.loc, plane:sw.loc } : { type:"ser", id:sw.id, i:sw.i, plane:SER[sw.id].plane };
+  return p==="x" ? null : { type:"loc", key:p, plane:p };
+}
+function panelGeo(p){
+  var ct=content(p);
+  if(ct && ct.type==="ser"){ var s=SER[ct.id], k=S.acq[ct.id][ct.i]; return { ipp:s.ipp[k], row:s.row, col:s.col, mmu:s.ps*s.cols/256 }; }
+  var L=C.loc[ct ? ct.key : "sag"]; return { ipp:L.ipp, row:L.row, col:L.col, mmu:L.ps*L.cols/256 };
 }
 function proj(G, P){ var d=sub(P, G.ipp); return [dot(d,G.row)/G.mmu, dot(d,G.col)/G.mmu]; }
 function projDir(G, d){ return [dot(d,G.row)/G.mmu, dot(d,G.col)/G.mmu]; }
 function unproj(G, x, y){ return axpy(axpy(G.ipp, G.row, x*G.mmu), G.col, y*G.mmu); }
 function f1(v){ return v.toFixed(1); }
 /* the axial tilt is set on a completed sagittal series, not on the coarse localiser */
-function sagOn(){ return !!S.swap.sag && SER[S.swap.sag.id].task==="sag"; }
-function canRotate(p, q){ return !(p==="sag" && needsAngle(q) && !sagOn()); }
+function isDiagSag(p){ var ct=content(p); return !!ct && ct.type==="ser" && SER[ct.id].task==="sag"; }
+function sagOn(){ return SLOTS.some(isDiagSag); }                 // a diagnostic sagittal series is in one of the boxes
+function canRotate(p, q){ var ct=content(p); return !(needsAngle(q) && ct && ct.plane==="sag" && !isDiagSag(p)); }
 /* the drawable shape of plan q on panel p */
 function shapeOf(p, q){
   var G=panelGeo(p), F=frame(q), pl=S.plan[q], N=cross(G.row, G.col), t=Math.abs(dot(F.n, N)), half=pl.fov/2, cov=coverage(pl);
@@ -1642,6 +1656,7 @@ function shapeOf(p, q){
   return sh;
 }
 function rotLabel(p, q){
+  p=content(p).plane;                                   // what the box shows, not where it sits
   if(TYPE[q]==="ax") return p==="sag" ? "tilt "+deg1(axTilt(q)) : p==="cor" ? "tilt "+deg1(axCor(q)) : "in-plane";
   return p==="ax" ? "rotation "+deg1(sagRot(q)) : p==="cor" ? "lean "+deg1(sagLean(q)) : "in-plane";
 }
@@ -1675,22 +1690,22 @@ function svgBox(p, q, mode){
   return out;
 }
 function drawOverlays(){
-  PANELS.forEach(function(p){
+  SLOTS.forEach(function(p){
+    if(!content(p)) return;                               // the fourth box showing the preview
     var svg=CELL[p].svg, out="";
     if(S.phase==="plan") out=svgBox(p, S.cur, "plan");
     else if(S.phase==="dash" || S.phase==="result") Object.keys(S.done).forEach(function(q){ out+=svgBox(p, q, "dash"); });
     svg.innerHTML=out;
-    var lab2="";
+    var lab2="", locked=S.phase==="plan" && !canRotate(p, S.cur);
     if(S.phase==="plan"){
-      var q=S.cur;
-      if(!canRotate(p, q)) lab2="🔒 tilt: drop the sagittal series here first";
-      else lab2 = "⟳ = angle · box = move · edges = "+(shapeOf(p, q).parallel ? "FOV" : "coverage / FOV");
+      if(locked) lab2="🔒 tilt: set it on a sagittal series";
+      else lab2 = "⟳ = angle · box = move · edges = "+(shapeOf(p, S.cur).parallel ? "FOV" : "coverage / FOV");
     }
     CELL[p].lab2.textContent=lab2;
-    var want = S.phase==="plan" && p==="sag" && needsAngle(S.cur) && !sagOn(), tag=CELL[p].el.querySelector(".mre-want");
-    CELL[p].lab2.style.color = want ? "var(--warn)" : "";
+    var want = locked && !sagOn(), tag=CELL[p].el.querySelector(".mre-want");
+    CELL[p].lab2.style.color = locked ? "var(--warn)" : "";
     CELL[p].el.classList.toggle("is-want", want);
-    if(want && !tag){ tag=document.createElement("div"); tag.className="mre-want"; tag.textContent="⬇ DROP THE SAGITTAL HERE TO TILT"; CELL[p].el.appendChild(tag); }
+    if(want && !tag){ tag=document.createElement("div"); tag.className="mre-want"; tag.textContent="⬇ DROP A SAGITTAL SERIES HERE TO TILT"; CELL[p].el.appendChild(tag); }
     if(!want && tag) tag.remove();
   });
 }
@@ -1699,7 +1714,7 @@ var drag=null;
 function svgPt(svg, e){ var r=svg.getBoundingClientRect(); return [(e.clientX-r.left)/r.width*256, (e.clientY-r.top)/r.height*256]; }
 function along(G, c, d, m){ var c2=proj(G, c), d2=projDir(G, d), L=d2[0]*d2[0]+d2[1]*d2[1]; return L<1e-9 ? 0 : ((m[0]-c2[0])*d2[0]+(m[1]-c2[1])*d2[1])/L; }
 function angLog(q){ log(TYPE[q]==="ax" ? "axial tilt: square to the canal through the block ✓" : "the "+SEQ[q].name.toLowerCase()+" runs straight along the spine again ✓","ok"); }
-PANELS.forEach(function(p){
+SLOTS.forEach(function(p){
   var svg=CELL[p].svg;
   svg.addEventListener("pointerdown", function(e){
     if(S.phase!=="plan") return;
@@ -1719,7 +1734,7 @@ PANELS.forEach(function(p){
       var d=unproj(G, m[0], m[1]), d0=unproj(G, drag.start[0], drag.start[1]);
       pl.c=add(p0.c, sub(d, d0));
     } else if(drag.h.indexOf("rot")===0){
-      if(!canRotate(p, q)){ if(!drag.warned){ drag.warned=true; log("the tilt unlocks on your real sagittal images — drag a sagittal from the tray onto the SAG panel first.","warn"); } return; }
+      if(!canRotate(p, q)){ if(!drag.warned){ drag.warned=true; log("the tilt unlocks on your real sagittal images — drag a sagittal series from the tray into one of the boxes first.","warn"); } return; }
       var a1=Math.atan2(m[1]-drag.c2[1], m[0]-drag.c2[0]), dd=(a1-drag.a0)*180/Math.PI;
       pl.f=rotFrame(q, drag.F0, cross(G.row, G.col), dd);
       if(angOK(q) && !drag.wasOK){ drag.wasOK=true; angLog(q); }
@@ -1758,7 +1773,7 @@ var prevT=0;
 function schedulePreview(){ if(prevT) return; prevT=requestAnimationFrame(function(){ prevT=0; drawPreview(); }); }
 var PREV = { sag:"sag_t2", ax:"ax_t2" };
 function drawPreview(){
-  if(S.phase!=="plan") return;
+  if(S.phase!=="plan" || content("x")) return;
   var q=S.cur, pl=S.plan[q], X=CELL.x, a=analyse(q), id=PREV[q], k=nearestSlice(id, pl.c);
   renderSeries(id, k, X.cv, pl);
   X.lab.textContent="PREVIEW · "+SEQ[q].name+" "+SER[id].seq+"\nnearest slice to the box centre · FOV "+pl.fov+" mm";
@@ -1779,8 +1794,7 @@ function setPhase(p){
   acqEl.classList.add("scg-hidden");
   stackUI.classList.toggle("scg-hidden", !(p==="view"||p==="result"));
   winBtns.classList.toggle("scg-hidden", !(p==="view"||p==="result"));
-  info.classList.toggle("scg-hidden", p!=="dash");
-  CELL.x.cv.style.display = (p==="dash") ? "none" : "";
+  syncX();
   vpTL.textContent=""; vpBL.textContent=""; vpBR.textContent="";
   requestAnimationFrame(layoutGrid);
   render();
@@ -1822,6 +1836,7 @@ function renderCmds(){
     cmds.appendChild(b);
   });
 }
+var BOX = { "1":"sag", "2":"cor", "3":"ax", "4":"x", sag:"sag", cor:"cor", ax:"ax", x:"x" };
 function parseCommand(raw){
   var t=raw.trim().toLowerCase(); if(!t) return;
   logCmd(t);
@@ -1829,19 +1844,21 @@ function parseCommand(raw){
   if(t==="help"){
     log("commands here: "+COMMANDS.filter(function(c){ return c.phases.indexOf(S.phase)>=0; }).map(function(c){ return c.key; }).join(", ")+", help","sys");
     log("workflow: choose the position (bolster | flat | arms) → load → loc → cloc (optional C-spine localiser) → plan sag → scan → use sag_t2 → plan ax → tilt → scan → finish.","sys");
-    log("while planning: slices <n> · thick <mm> · gap <mm> · fov <mm> · tilt <deg> (axial, once a sagittal is on the SAG panel) · straight (sagittal stacks) · auto · scan · back","sys");
-    log("after a scan: use <series> (e.g. use sag_t2) puts it in place of its localiser · restore <sag|cor|ax> brings the localiser back","sys");
+    log("while planning: slices <n> · thick <mm> · gap <mm> · fov <mm> · tilt <deg> (axial, once a sagittal series is in one of the boxes) · straight (sagittal stacks) · auto · scan · back","sys");
+    log("boxes: drag any localiser or series from the tray into any of the four boxes, or type: use <item> <box> — items: locsag, loccor, locax, cloc, a series (e.g. sag_t2); boxes: 1 top-left, 2 top-right, 3 bottom-left, 4 bottom-right · restore <1-4> puts a box back","sys");
     return;
   }
   if(S.phase==="setup" && POS[w[0]]){ choosePos(w[0]); return; }
   var xl=EXTRA.filter(function(x){ return w[0]===x.k+"loc"; })[0];
   if(xl && (S.phase==="dash"||S.phase==="plan")){ runExtra(xl); return; }
   if(w[0]==="use" && (S.phase==="dash"||S.phase==="plan")){
-    var id = SER[w[1]] ? w[1] : (SEQ[w[1]] ? Object.keys(S.acq).filter(function(i){ return SER[i].task===w[1]; })[0] : null);
-    if(id && S.acq[id]) useSeries(id); else log("nothing acquired for '"+(w[1]||"")+"' yet.","warn");
+    var slot=BOX[w[2]], lk=/^loc(sag|cor|ax)$/.exec(w[1]||""), xe=EXTRA.filter(function(x){ return w[1]===x.k+"loc"; })[0];
+    if(lk){ place("loc:"+lk[1], slot||lk[1]); return; }
+    var id = xe ? xe.id : SER[w[1]] ? w[1] : (SEQ[w[1]] ? Object.keys(S.acq).filter(function(i){ return SER[i].task===w[1]; })[0] : null);
+    if(id && S.acq[id]) useSeries(id, slot); else log("nothing acquired for '"+(w[1]||"")+"' yet.","warn");
     return;
   }
-  if(w[0]==="restore" && CELL[w[1]] && w[1]!=="x" && (S.phase==="dash"||S.phase==="plan")){ restoreLoc(w[1]); return; }
+  if(w[0]==="restore" && BOX[w[1]] && (S.phase==="dash"||S.phase==="plan")){ restoreLoc(BOX[w[1]]); return; }
   if(w[0]==="plan" && SEQ[w[1]] && (S.phase==="dash"||S.phase==="view"||S.phase==="plan")){ gotoPlan(w[1]); return; }
   if(S.phase==="plan" && w[0]==="straight"){
     if(TYPE[S.cur]==="ax") log("'straight' resets a sagittal stack — tilt the axial with: tilt <deg>.","warn"); else straighten(S.cur);
@@ -1849,7 +1866,7 @@ function parseCommand(raw){
   }
   if(S.phase==="plan" && (w[0]==="tilt"||w[0]==="angle") && !isNaN(parseFloat(w[1]))){
     if(!needsAngle(S.cur)) log("the sagittal stacks stay straight along the spine — drag ⟳ on the coronal or axial panel if you need to turn one, or type: straight.","warn");
-    else if(!sagOn()) log("drag a completed sagittal onto the SAG panel first — you set the tilt on the real sagittal images.","warn");
+    else if(!sagOn()) log("drag a completed sagittal series into one of the boxes first — you set the tilt on the real sagittal images.","warn");
     else setAngle(S.cur, parseFloat(w[1]));
     return;
   }
@@ -1916,14 +1933,14 @@ function angleBlock(q){
     var ids=Object.keys(S.acq).filter(function(id){ return SER[id].task==="sag"; });
     return '<div class="mre-angbox is-bad"><b class="t">AXIAL TILT ON THE SAGITTAL · 🔒 LOCKED</b>'+
       '<div class="mre-ang"><span>TILT</span><button type="button" class="is-lock" data-d="-5">−5°</button><button type="button" class="is-lock" data-d="-1">−1°</button><output>'+deg1(axTilt(q))+'</output><button type="button" class="is-lock" data-d="1">+1°</button><button type="button" class="is-lock" data-d="5">+5°</button></div>'+
-      '<div class="scg-hint is-warn">To unlock the tilt, drag a sagittal below onto the <b>SAG</b> panel (top left) — or tap it. You angle the axials on the diagnostic sagittal, where the discs and canal are sharp.</div>'+
+      '<div class="scg-hint is-warn">To unlock the tilt, drag a sagittal below into any box — or tap it to put it top left. You angle the axials on the diagnostic sagittal, where the discs and canal are sharp.</div>'+
       '<div class="mre-tray">'+ids.map(function(id){ return '<button type="button" class="mre-thumb" data-id="'+id+'" title="Drag onto the SAG localiser"><canvas width="152" height="152"></canvas><span>SAG · '+SER[id].seq+'</span></button>'; }).join('')+'</div></div>';
   }
   return '<div class="mre-angbox '+(a.angOK?"is-ok":"is-bad")+'"><b class="t">AXIAL TILT ON THE SAGITTAL</b>'+
     '<div class="mre-ang"><span>TILT</span><button type="button" data-d="-5">−5°</button><button type="button" data-d="-1">−1°</button><output>'+deg1(axTilt(q))+'</output><button type="button" data-d="1">+1°</button><button type="button" data-d="5">+5°</button></div>'+
     '<div class="scg-hint '+(a.angOK?"is-ok":"is-warn")+'">'+(a.angOK ? "✓ Square to the canal across T5–T9 — each slice cuts the cord in true cross-section."
       : Math.abs(axCor(q)) > TOLS ? "The block leans "+deg1(axCor(q))+" on the coronal — keep it level side to side; only the sagittal tilt is needed here."
-      : "On the SAG panel, drag ⟳ until the slice lines cross the canal at right angles through T5–T9 (parallel to the discs there). The spine leans back as it goes down, so the back of each slice has to lift.")+'</div></div>';
+      : "On the sagittal series, drag ⟳ until the slice lines cross the canal at right angles through T5–T9 (parallel to the discs there). The spine leans back as it goes down, so the back of each slice has to lift.")+'</div></div>';
 }
 function renderRail(){
   var p=S.phase;
@@ -1982,7 +1999,7 @@ function renderRail(){
     });
     Array.prototype.forEach.call(railBody.querySelectorAll(".mre-ang button"), function(b){
       b.onclick=function(){ var d=parseFloat(b.dataset.d), a=Math.round(axTilt(S.cur))+d; logCmd("tilt "+a);
-        if(!sagOn()){ log("drag a completed sagittal onto the SAG panel first — you set the tilt on the real sagittal images.","warn"); return; }
+        if(!sagOn()){ log("drag a completed sagittal series into one of the boxes first — you set the tilt on the real sagittal images.","warn"); return; }
         setAngle(S.cur, a); };
     });
     bindSeqList(); bindTray();
@@ -1998,7 +2015,7 @@ function renderRail(){
     railTitle.textContent=SEQ[vq].name+" · images"; railDesc.textContent="Scroll the slices your plan covers";
     railBody.innerHTML=kvBlock([["Series",SER[v].seq+" · "+SER[v].params],["Images",S.list.length+" of "+SER[v].n+" slices"],[TYPE[vq]==="ax"?"Levels":"Levels in the FOV",spanText(vq)],["Navigate","wheel / drag / ↑ ↓"]])+
       covBlock(vq)+'<div class="scg-hint">'+(an.all?"Everything you need from this plan is in the stack.":"Anything ticked ✗ was outside your stack or FOV — it would need another scan.")+
-      (vq==="sag" ? ' Next: <b>back</b> to the protocol; for the axials, drag a sagittal onto the <b>SAG</b> panel to set the tilt.'
+      (vq==="sag" ? ' Next: <b>back</b> to the protocol; for the axials, drag a sagittal series into one of the boxes to set the tilt.'
         : ' <b>back</b> returns to the protocol.')+'</div>';
   }
   else if(p==="result"){
@@ -2021,7 +2038,7 @@ function renderInfo(){
       return '<div class="mre-row"><i class="mre-sw" style="background:'+COLORS[q]+'"></i><span><b>'+SEQ[q].name+'</b> · '+(d?(S.plan[q].n+" slices · "+spanText(q)+" · "+(planOK(q)?"✓":"⚠")):(q==="ax"&&!S.done.sag?"after the sagittal":"not planned yet"))+'</span></div>'; }).join('')+
     '<div style="margin-top:6px">Order matters: the <b>sagittal</b> goes first, straight along the spine from C7 to L1. The <b>axial</b> block is then tilted on your real sagittal images — square to the canal through the requested levels, T5 to T9.</div>'+
     (EXTRA.length?'<div>The T-spine localiser can\'t show where the spine starts or ends. The optional <b>'+EXTRA.map(function(x){ return low(x.name); }).join('</b> and <b>')+'</b> can — run one, then plan the sagittal on it.</div>':'')+
-    (Object.keys(S.acq).length?'<div>Completed series can replace the localiser of the same plane — drag them in from the tray on the right.</div>':'');
+    '<div>Every localiser and completed series is in the tray on the right: drag any of them into any of the four boxes (this one too) to plan on several at once.</div>';
 }
 
 /* =============================================================
@@ -2145,7 +2162,7 @@ function gotoPlan(q){
   refreshCells();
   drawPreview();
   log("planning the <b>"+SEQ[q].name.toLowerCase()+"</b>: "+SEQ[q].hint,"sys");
-  if(needsAngle(q) && !sagOn()) log("drag a sagittal from the tray onto the <b>SAG</b> panel to unlock the tilt handle.","warn");
+  if(needsAngle(q) && !sagOn()) log("drag a sagittal series from the tray into one of the boxes to unlock the tilt handle.","warn");
 }
 /* ---- extra localisers (C-spine / L-spine): one click, no planning; the images then sit in the tray ---- */
 function extraBlock(){
@@ -2153,7 +2170,7 @@ function extraBlock(){
     var d=!!S.acq[x.id];
     return '<div class="mre-card'+(d?" is-done":"")+'"><div class="mre-card-h"><i class="mre-sw" style="background:'+COLORS.cnt+'"></i><b>'+x.name+'</b>'+
       '<span class="mre-chip '+(d?"ok":"")+'">'+(d?"✓ ACQUIRED":"○ OPTIONAL")+'</span></div>'+
-      '<p>Large-FOV mid-line sagittal ('+x.fov+' mm). Shows '+x.tells+'.'+(d?' It is in the tray: drag it onto the <b>SAG</b> panel to plan on it.':'')+'</p>'+
+      '<p>Large-FOV mid-line sagittal ('+x.fov+' mm). Shows '+x.tells+'.'+(d?' It is in the tray: drag it into any box to plan on it.':'')+'</p>'+
       '<button class="scg-btn" type="button" data-x="'+x.k+'"><span>'+(d?"RE-RUN ":"RUN ")+x.name+'</span><span class="scg-key">'+x.k+'loc</span></button></div>';
   }).join('');
 }
@@ -2173,80 +2190,104 @@ function runExtra(x){
     var all=[]; for(var k=0;k<s.n;k++) all.push(k);
     S.acq[x.id]=all;
     log(low(x.name)+" acquired — "+s.n+" images. It shows "+x.tells+".","ok");
-    useSeries(x.id);
+    useSeries(x.id, "x");                               // bottom-right box: beside the T-spine localisers, not instead of one
   })();
 }
-/* ---- completed series can replace the localiser of the same plane ---- */
+/* ---- the boxes: localisers and completed series, dragged in from the tray ---- */
+function itemPlane(it){ return it.indexOf("loc:")===0 ? it.slice(4) : SER[it].plane; }
+function itemName(it){ return it.indexOf("loc:")===0 ? NAME[it.slice(4)]+" LOC" : thumbName(it); }
 function cellLabel(p){
-  var base=NAME[p]+" LOCALISER";
-  if(!S.swap[p]) return base;
-  var sw=S.swap[p], s=SER[sw.id], list=S.acq[sw.id];
-  return (s.task==="sag"||s.task==="ax" ? NAME[p]+" · "+s.seq+" (series)" : NAME[s.task])+"\nIM "+(sw.i+1)+"/"+list.length+" · scroll";
+  var ct=content(p); if(!ct) return "";
+  if(ct.type==="loc") return NAME[ct.key]+" LOCALISER";
+  var s=SER[ct.id], list=S.acq[ct.id];
+  return (s.task==="sag"||s.task==="ax" ? NAME[s.plane]+" · "+s.seq+" (series)" : NAME[s.task])+"\nIM "+(ct.i+1)+"/"+list.length+" · scroll";
 }
 function refreshCells(){
-  PANELS.forEach(function(p){
-    var c=CELL[p], on=!!S.swap[p];
-    c.el.classList.toggle("is-series", on);
-    c.img.style.display = on ? "none" : "";
+  SLOTS.forEach(function(p){
+    var c=CELL[p], ct=content(p), ser=!!ct && ct.type==="ser", moved=!!S.swap[p];
+    c.el.classList.toggle("is-series", ser);
+    if(ct && ct.type==="loc"){ var u=url("loc_"+ct.key); if(c.img.getAttribute("src")!==u) c.img.src=u; c.img.style.display=""; }
+    else c.img.style.display="none";
     var rb=c.el.querySelector(".mre-restore"), sc=c.el.querySelector(".mre-scroll");
-    if(on && !rb){
-      rb=document.createElement("button"); rb.type="button"; rb.className="mre-restore"; rb.textContent="↺ LOC";
-      rb.onclick=function(){ logCmd("restore "+p); restoreLoc(p); }; c.el.appendChild(rb);
+    if(moved && !rb){
+      rb=document.createElement("button"); rb.type="button"; rb.className="mre-restore"; rb.textContent = p==="x" ? "↺ PREVIEW" : "↺ "+NAME[p]+" LOC";
+      rb.onclick=function(){ logCmd("restore "+(SLOTS.indexOf(p)+1)); restoreLoc(p); }; c.el.appendChild(rb);
+    }
+    if(!moved && rb) rb.remove();
+    if(ser && !sc){
       sc=document.createElement("div"); sc.className="mre-scroll";
       sc.innerHTML='<button type="button" aria-label="previous slice">▲</button><button type="button" aria-label="next slice">▼</button>';
       sc.children[0].onclick=function(){ scrollCell(p, -1); }; sc.children[1].onclick=function(){ scrollCell(p, 1); };
       c.el.appendChild(sc);
     }
-    if(!on && rb){ rb.remove(); if(sc) sc.remove(); }
-    if(on) drawCellSeries(p); else { if(c.cv.width!==256){ c.cv.width=c.cv.height=256; } c.cv.getContext("2d").clearRect(0,0,256,256); }
-    c.lab.textContent=cellLabel(p);
+    if(!ser && sc) sc.remove();
+    if(ser) drawCellSeries(p);
+    else if(ct){ if(c.cv.width!==256){ c.cv.width=c.cv.height=256; } c.cv.getContext("2d").clearRect(0,0,256,256); }
+    if(ct){ c.lab.textContent=cellLabel(p); if(p==="x"){ c.lab2.textContent=""; c.lab2.style.color=""; } }
+    var o=ct ? ORI[ct.plane] : ["","","",""];
+    ["t","b","l","r"].forEach(function(k, i){ var e=c.el.querySelector(".mre-ori."+k); if(e) e.textContent=o[i]; });
   });
+  syncX();
+}
+/* the fourth box: the protocol summary (protocol screen) or the preview (planning) until something is dropped into it */
+function syncX(){
+  var has=!!content("x"), X=CELL.x;
+  info.classList.toggle("scg-hidden", S.phase!=="dash" || has);
+  X.cv.style.display = (S.phase==="dash" && !has) ? "none" : "";
+  if(has) return;
+  X.svg.innerHTML=""; X.el.classList.remove("is-want"); var tag=X.el.querySelector(".mre-want"); if(tag) tag.remove();
+  if(S.phase==="plan"){ if(X.cv.width!==384){ X.cv.width=X.cv.height=384; } schedulePreview(); }
+  else if(S.phase==="dash"){ X.lab.textContent=""; X.lab2.textContent=""; }
 }
 function drawCellSeries(p){
   var c=CELL[p], cv=c.cv, sw=S.swap[p], k=S.acq[sw.id][sw.i];
   if(cv.width!==512){ cv.width=cv.height=512; }
   getImg(imgName(sw.id, k), function(im){
-    if(!S.swap[p] || S.acq[S.swap[p].id][S.swap[p].i]!==k) return;
+    var w=S.swap[p]; if(!w || w.id!==sw.id || S.acq[w.id][w.i]!==k) return;
     var g=cv.getContext("2d"); g.setTransform(1,0,0,1,0,0); g.imageSmoothingEnabled=true; g.imageSmoothingQuality="high";
     g.drawImage(im, 0, 0, 512, 512);
   });
 }
 var MID = [X0, LM.t7[1], LM.t7[2]];                            // mid-line at T7: where a series opens
 function closestIn(id, list, P){ var b=0; list.forEach(function(k, j){ if(Math.abs(dot(sub(P, SER[id].ipp[k]), SER[id].nrm)) < Math.abs(dot(sub(P, SER[id].ipp[list[b]]), SER[id].nrm))) b=j; }); return b; }
-function useSeries(id){
-  if(!S.acq[id]) return;
-  var p=SER[id].plane, list=S.acq[id];
-  S.swap[p]={ id:id, i:closestIn(id, list, MID) };
-  var t=SER[id].task;
-  log(t==="sag" ? SER[id].seq+" now replaces the SAG localiser — opened on the mid-line. Tilt the axial block so its slices cross the canal at right angles."
-    : t==="ax" ? SER[id].seq+" now replaces the AX localiser — sharper anatomy to plan on."
-    : "the "+low(SEQ[t].name)+" is now on the SAG panel — your plan boxes are drawn on it in their true position.","ok");
+/* put item it ("loc:sag" | "loc:cor" | "loc:ax" | a series id) into box p */
+function place(it, p){
+  if(!CELL[p]) return;
+  if(it.indexOf("loc:")===0){ var key=it.slice(4); if(key===p) delete S.swap[p]; else S.swap[p]={ loc:key }; }
+  else { if(!S.acq[it]) return; S.swap[p]={ id:it, i:closestIn(it, S.acq[it], MID) }; }
+  var t = it.indexOf("loc:")===0 ? "loc" : SER[it].task;
+  log(itemName(it)+" is now in the "+SLOTNAME[p]+" box"+
+    (t==="sag" ? " — opened on the mid-line. Tilt the axial block here so its slices cross the canal at right angles."
+     : " — your plan boxes are drawn on it in their true position."),"ok");
   refreshCells(); render(); schedulePreview();
 }
-function restoreLoc(p){ delete S.swap[p]; log(NAME[p]+" localiser restored.","sys"); refreshCells(); render(); schedulePreview(); }
+function useSeries(id, slot){ if(S.acq[id]) place(id, slot || SER[id].plane); }
+function restoreLoc(p){ delete S.swap[p]; log(p==="x" ? "bottom-right box: preview restored." : NAME[p]+" localiser restored.","sys"); refreshCells(); render(); schedulePreview(); }
 function scrollCell(p, d){
-  var sw=S.swap[p]; if(!sw) return;
+  var sw=S.swap[p]; if(!sw || !sw.id) return;
   var i=Math.max(0, Math.min(S.acq[sw.id].length-1, sw.i+d)); if(i===sw.i) return;
   sw.i=i; drawCellSeries(p); CELL[p].lab.textContent=cellLabel(p); drawOverlays();
 }
-PANELS.forEach(function(p){
-  CELL[p].el.addEventListener("wheel", function(e){ if(!S.swap[p] || !(S.phase==="plan"||S.phase==="dash")) return; e.preventDefault(); scrollCell(p, e.deltaY>0?1:-1); }, { passive:false });
+SLOTS.forEach(function(p){
+  CELL[p].el.addEventListener("wheel", function(e){ if(!S.swap[p] || !S.swap[p].id || !(S.phase==="plan"||S.phase==="dash")) return; e.preventDefault(); scrollCell(p, e.deltaY>0?1:-1); }, { passive:false });
 });
 function thumbName(id){ var t=SER[id].task; return t==="sag"||t==="ax" ? NAME[SER[id].plane]+' · '+SER[id].seq : NAME[t]; }
+function inUse(it){ return SLOTS.some(function(p){ var ct=content(p); return !!ct && (ct.type==="loc" ? "loc:"+ct.key : ct.id)===it; }); }
 function trayBlock(){
-  var ids=Object.keys(S.acq);
-  if(!ids.length) return "";
-  return '<div class="scg-hint">Completed series — <b>drag one onto its localiser</b> (or tap it) to plan on the real images:</div><div class="mre-tray">'+
-    ids.map(function(id){ var p=SER[id].plane; return '<button type="button" class="mre-thumb'+(S.swap[p]&&S.swap[p].id===id?" is-used":"")+'" data-id="'+id+'" title="Drag onto the '+NAME[p]+' localiser"><canvas width="152" height="152"></canvas><span>'+thumbName(id)+'</span></button>'; }).join('')+'</div>';
+  var its=(S.locDone ? PANELS.map(function(k){ return "loc:"+k; }) : []).concat(Object.keys(S.acq));
+  if(!its.length) return "";
+  return '<div class="scg-hint">Localisers and completed series — <b>drag any of them into any of the four boxes</b> to plan on several at once (tap one to put it in its usual box; ↺ puts a box back):</div><div class="mre-tray">'+
+    its.map(function(it){ return '<button type="button" class="mre-thumb'+(inUse(it)?" is-used":"")+'" data-id="'+it+'" title="Drag into any box"><canvas width="152" height="152"></canvas><span>'+itemName(it)+'</span></button>'; }).join('')+'</div>';
 }
 var tdrag=null;
 function bindTray(){
   Array.prototype.forEach.call(railBody.querySelectorAll(".mre-thumb"), function(b){
-    var id=b.dataset.id, p=SER[id].plane, cv=b.querySelector("canvas"), list=S.acq[id];
-    renderSeries(id, list[closestIn(id, list, MID)], cv);
+    var id=b.dataset.id, cv=b.querySelector("canvas");
+    if(id.indexOf("loc:")===0) getImg("loc_"+id.slice(4), function(im){ cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height); });
+    else { var list=S.acq[id]; renderSeries(id, list[closestIn(id, list, MID)], cv); }
     b.addEventListener("pointerdown", function(e){
       e.preventDefault();
-      tdrag={ id:id, p:p, x:e.clientX, y:e.clientY, moved:false, ghost:null, src:cv };
+      tdrag={ id:id, x:e.clientX, y:e.clientY, moved:false, ghost:null, src:cv };
       try{ b.setPointerCapture(e.pointerId); }catch(_){}
     });
     b.addEventListener("pointermove", function(e){
@@ -2257,29 +2298,27 @@ function bindTray(){
         var g=document.createElement("canvas"); g.className="mre-ghost"; g.width=g.height=76;
         try{ g.getContext("2d").drawImage(tdrag.src, 0, 0, 76, 76); }catch(_){}
         document.body.appendChild(g); tdrag.ghost=g;
-        PANELS.forEach(function(q){ CELL[q].el.classList.toggle("is-nodrop", q!==tdrag.p); });
       }
       tdrag.ghost.style.left=e.clientX+"px"; tdrag.ghost.style.top=e.clientY+"px";
-      CELL[tdrag.p].el.classList.toggle("is-drop", dropCell(e.clientX, e.clientY)===tdrag.p);
+      var over=dropCell(e.clientX, e.clientY);
+      SLOTS.forEach(function(q){ CELL[q].el.classList.toggle("is-drop", q===over); });
     });
     function end(e){
       if(!tdrag) return;
       var d=tdrag; tdrag=null;
       if(d.ghost) d.ghost.remove();
-      PANELS.forEach(function(q){ CELL[q].el.classList.remove("is-drop","is-nodrop"); });
-      if(!d.moved){ if(e.type==="pointerup"){ logCmd("use "+d.id); useSeries(d.id); } return; }
-      var over=e.type==="pointerup" ? dropCell(e.clientX, e.clientY) : null;
-      if(!over) return;
-      logCmd("use "+d.id);
-      if(over!==d.p) log("the "+SER[d.id].seq+" images are "+NAME[d.p]+" slices — they can only replace the "+NAME[d.p]+" localiser.","warn");
-      else useSeries(d.id);
+      SLOTS.forEach(function(q){ CELL[q].el.classList.remove("is-drop","is-nodrop"); });
+      var to = !d.moved ? (e.type==="pointerup" ? itemPlane(d.id) : null) : (e.type==="pointerup" ? dropCell(e.clientX, e.clientY) : null);
+      if(!to) return;
+      logCmd("use "+d.id.replace("loc:","loc")+" "+(SLOTS.indexOf(to)+1));
+      place(d.id, to);
     }
     b.addEventListener("pointerup", end); b.addEventListener("pointercancel", end);
   });
 }
 function dropCell(x, y){
   var el=document.elementFromPoint(x, y), cell=el && el.closest ? el.closest(".mre-cell") : null;
-  return cell && cell.dataset.p!=="x" ? cell.dataset.p : null;
+  return cell ? cell.dataset.p : null;
 }
 function autoPlan(){
   var q=S.cur, id=SEQ[q].ideal, s=SER[id], pl=S.plan[q];
@@ -2311,8 +2350,8 @@ function scanSeq(){
     Object.keys(S.acq).forEach(function(id){ if(SER[id].task===q) delete S.acq[id]; });
     ids.forEach(function(id){ var l=coveredSlices(id); S.acq[id]= l.length ? l : [nearestSlice(id, S.plan[q].c)]; });
     S.ids[q]=ids;
-    Object.keys(S.swap).forEach(function(p){ var sw=S.swap[p]; if(!S.acq[sw.id]) delete S.swap[p]; else sw.i=Math.min(sw.i, S.acq[sw.id].length-1); });
-    if(q==="sag") log("tip: for the axials, drag a sagittal onto the SAG panel — that is where you set their tilt.","sys");
+    Object.keys(S.swap).forEach(function(p){ var sw=S.swap[p]; if(sw.loc) return; if(!S.acq[sw.id]) delete S.swap[p]; else sw.i=Math.min(sw.i, S.acq[sw.id].length-1); });
+    if(q==="sag") log("tip: for the axials, drag a sagittal series into one of the boxes — that is where you set their tilt.","sys");
     log(SEQ[q].name.toLowerCase()+" acquired — "+ids.map(function(id){ return SER[id].seq+" "+S.acq[id].length+" images"; }).join(", ")+".", planOK(q)?"ok":"warn");
     showSeries(ids[0], "view");
   })();
@@ -2442,7 +2481,7 @@ function resetAll(){
    ============================================================= */
 $("scgStart").onclick=function(){ titleEl.classList.add("scg-hidden"); gotoSetup(); };
 window.__mrs={ S:function(){ return S; }, parse:parseCommand, useSeries:useSeries, analyse:analyse, planOK:planOK, gotoPlan:gotoPlan,
-               autoPlan:autoPlan, setAngle:setAngle, runExtra:runExtra, EXTRA:EXTRA, angErr:angErr, axTilt:axTilt, shapeOf:shapeOf, REF:REF, scanSeq:scanSeq, showResult:showResult };
+               autoPlan:autoPlan, setAngle:setAngle, place:place, content:content, runExtra:runExtra, EXTRA:EXTRA, angErr:angErr, axTilt:axTilt, shapeOf:shapeOf, REF:REF, scanSeq:scanSeq, showResult:showResult };
 addFixedPlans();
 setPhase("title");
 })();

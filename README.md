@@ -20,14 +20,18 @@ Source images: <https://www.cancerimagingarchive.net/collection/cmb-mml/>
 2. **Localiser.** The study's own 3-plane scout (360 mm FOV) is "acquired" line by line from its k-space with an
    inverse FFT.
 3. **Optional C-spine localiser.** One click (`cloc`) from the protocol: a fast, large-FOV (480 mm) mid-line sagittal
-   from the skull base to T11. It lands in the tray and on the SAG panel, and the plan boxes are drawn on it in their
-   true position, so you can see where C7 is before placing the T-spine FOV. An **L-spine localiser** (`lloc`) is
+   from the skull base to T11. It lands in the tray and in the bottom-right box, and the plan boxes are drawn on it in
+   their true position, so you can see where C7 is before placing the T-spine FOV. An **L-spine localiser** (`lloc`) is
    offered the same way once images for it are in the build — this study has none.
+   **Any localiser in any box.** The tray lists every localiser (T-spine SAG / COR / AX, the C-spine localiser) and
+   every completed series. Drag any of them into any of the four boxes of the planning grid — the fourth box
+   normally shows the preview — to plan on several at once; the plan is drawn on each in its true position. Tapping
+   a thumbnail puts it in its usual box, and ↺ puts a box back.
 4. **Sagittal first.** Centre the stack on the spine on the coronal and axial localisers, keep it straight along the
    spine, cover the vertebrae edge to edge, and size the FOV to hold C7 at the top and L1 at the bottom (≈ 340 mm).
    T2, T1 and STIR.
-5. **Axial.** Unlocks once the sagittal is scanned. Drag (or tap) a sagittal from the tray onto the **SAG** panel to
-   unlock the tilt handle, then tilt the block square to the canal through T5–T9 (reference 7.1°, graded ± 5°: a
+5. **Axial.** Unlocks once the sagittal is scanned. Drag a sagittal series from the tray into any box (or tap it) to
+   unlock the tilt handle — the tilt is set on a diagnostic sagittal, not on a localiser — then tilt the block square to the canal through T5–T9 (reference 7.1°, graded ± 5°: a
    straight stack fails) and cover T5 to T9 with a ≈ 200 mm FOV. T2 and T1.
 6. **Scan → images.** Each scan shows the acquired slices inside your stack, cropped to your FOV.
 7. **Debrief.** Coverage and angle per plan, position, hero images (the sagittal shows your axial block against the
@@ -35,7 +39,8 @@ Source images: <https://www.cancerimagingarchive.net/collection/cmb-mml/>
    marker.
 
 CLI: `bolster | flat | arms`, `load`, `loc`, `cloc`, `plan sag|ax`, `auto`, `slices`, `thick`, `gap`, `fov`, `tilt`,
-`straight`, `use <series>`, `restore <sag|cor|ax>`, `scan`, `back`, `finish`, `help`.
+`straight`, `use <item> [box]` (items: `locsag`, `loccor`, `locax`, `cloc`, or a series such as `sag_t2`; boxes `1`–`4`),
+`restore <1-4>`, `scan`, `back`, `finish`, `help`.
 
 ## Files
 
