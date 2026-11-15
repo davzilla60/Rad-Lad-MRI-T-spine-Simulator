@@ -717,7 +717,7 @@
         <div class="scg-ach-text">
           <div class="scg-ach-label">Marker Unlocked</div>
           <div class="scg-ach-title">Spine and Dandy</div>
-          <div class="scg-ach-sub">Thoracic spine · sagittals C7 to L1, levels counted from C2, axials square to the canal</div>
+          <div class="scg-ach-sub">Thoracic spine · sagittals straight along the spine from C7 to L1, axials square to the canal</div>
         </div>
         <button class="scg-ach-replay" id="scgAchReplay" type="button">Replay</button>
       </div>
@@ -730,11 +730,11 @@
   <div class="scg-title" id="scgTitle">
     <div class="scg-logo-plate"><img id="scgLogoBig" alt="Rad-Lad"></div>
     <h1><span class="scg-the">MR-I READY</span>THORACIC SPINE</h1>
-    <div class="scg-sub">Set the patient up on the spine array, run the 3-plane localiser, plan the sagittals from C7 to L1, count the levels down from C2 — then tilt the axials square to the canal</div>
+    <div class="scg-sub">Set the patient up on the spine array, run the 3-plane localiser — and a C-spine localiser if you need to see where the spine starts — plan the sagittals from C7 to L1, then tilt the axials square to the canal</div>
     <button class="scg-start" id="scgStart">▶ Begin</button>
     <div class="scg-scouts"><img id="scgT1" alt=""><img id="scgT2" alt=""><img id="scgT3" alt=""></div>
     <div class="scg-fine">Demonstration only — an educational simulation of MRI planning, not a medical device, not for clinical use.
-      Every image comes from one real, de-identified thoracic spine MRI in a public research collection (The Cancer Imaging Archive, CC BY 4.0), shown with its true geometry; the clinical request is fictional — see the credits on the results screen.</div>
+      Every image comes from one real, de-identified thoracic spine MRI in a public research collection (<a href="https://www.cancerimagingarchive.net/collection/cmb-mml/" target="_blank" rel="noopener">Cancer Moonshot Biobank – Multiple Myeloma Collection</a>, The Cancer Imaging Archive, CC BY 4.0), shown with its true geometry; the clinical request is fictional — see the credits on the results screen.</div>
   </div>
 
 </div>
@@ -1292,18 +1292,19 @@ window.SCG_ROOM3D = function(THREE, host){
 /* ---------------------------------------------------------------
    MR-I READY — MRI THORACIC SPINE planning simulator (demonstration)
    Set-up (supine, head first, on the spine array) → 3-plane localiser acquired line by line in k-space → protocol →
-   SAGITTAL first (along the spine, C7 to L1) → the large-FOV COUNTING localiser that reaches C2, so the thoracic levels
-   can be numbered → drag the sagittal onto the sagittal panel → TILT the AXIAL block square to the canal through the
-   requested levels → images → debrief.
+   optional C-SPINE (and L-SPINE) localisers, which show C2 (or the sacrum) so the T-spine can be placed → SAGITTAL first
+   (along the spine, C7 to L1) → drag the sagittal onto the sagittal panel → TILT the AXIAL block square to the canal
+   through the requested levels → images → debrief.
    Everything lives in DICOM patient space (LPS, mm): +x patient left, +y posterior, +z superior. Each panel shows an
    image with its real IPP / IOP, and plan boxes are projected onto it, so they line up on localisers and series alike.
    --------------------------------------------------------------- */
 var BASE = "./assets/";
-var C = window.MRS_CALIB, LN = C.loc.n, SER = C.ser, LM = C.lm, HH = LM.conf, LV = C.lv, LVC = C.lvc, DISC = C.disc;
+var C = window.MRS_CALIB, LN = C.loc.n, SER = C.ser, LM = C.lm, HH = LM.conf, LV = C.lv, DISC = C.disc;
 var ASSETS = window.SCG_ASSETS || null, LOCIMG = window.MRS_LOCIMG || {};
 var PNG = { logo_full:1, logo_mark:1, loc_sag:1, loc_cor:1, loc_ax:1 };
 /* the localisers also ship as data URIs in calib.js, so the k-space step works when the page is opened from disk */
 function url(n){ return ASSETS ? ASSETS[n] : (n.indexOf("loc_")===0 && LOCIMG[n.slice(4)]) ? LOCIMG[n.slice(4)] : BASE + n + (PNG[n] ? ".png" : ".jpg"); }
+function low(s){ return s.charAt(0)+s.slice(1).toLowerCase(); }          // "C-SPINE LOCALISER" -> "C-spine localiser"
 function pad2(n){ return (n<10?"0":"")+n; }
 function imgName(id, k){ return id+"_"+pad2(k); }
 var $ = function(id){ return document.getElementById(id); };
@@ -1340,16 +1341,19 @@ var DEG = 180/Math.PI;
 /* =============================================================
    ANATOMY + PROTOCOL DATA
    ============================================================= */
-var TASKS = ["sag","cnt","ax"], PANELS = ["sag","cor","ax"];
-var TYPE = { sag:"sag", cnt:"sag", ax:"ax" };                 // the counting localiser is a second sagittal stack
+var TASKS = ["sag","ax"], PANELS = ["sag","cor","ax"];
+var TYPE = { sag:"sag", cnt:"sag", lsp:"sag", ax:"ax" };      // cnt / lsp: the extra (C-spine / L-spine) localisers, sagittal images
 var COLORS = { sag:"#f0a35e", cnt:"#6fc3ff", ax:"#5fe08a" };
-var NAME = { sag:"SAG", cor:"COR", ax:"AX", cnt:"COUNT" };
+var NAME = { sag:"SAG", cor:"COR", ax:"AX", cnt:"C-SP LOC", lsp:"L-SP LOC" };
+/* extra localisers: one click each, no planning. Each is offered only if its images are in the build. */
+var EXTRA = [ { k:"c", id:"cnt_t1", task:"cnt", name:"C-SPINE LOCALISER", fov:480, tells:"the skull base and C2 — count down from C2 to find C7 and T1" },
+              { k:"l", id:"lsp_t1", task:"lsp", name:"L-SPINE LOCALISER", fov:480, tells:"the sacrum — count up from L5 to find L1 and T12" } ]
+            .filter(function(x){ return !!C.ser[x.id]; });
 var REF = C.real.axtilt;                                      // the axial block's tilt on the sagittal, as acquired
 var TOL = 5, TOLS = 6;                                        // degrees: axial tilt · "straight along the spine"
 var X0 = HH[0], BODY_Y = 58;                                  // mid-line of the spine · depth of the vertebral bodies
-var MAT = { sag:320, cnt:416, ax:320 };
+var MAT = { sag:320, ax:320 };
 var LIM = { sag: { nmax:31, tmin:2, tmax:5, fmin:240, fmax:420, coarse:400, narrow:0,   over:110 },
-            cnt: { nmax:21, tmin:2, tmax:6, fmin:300, fmax:500, coarse:1e9, narrow:0,   over:70 },
             ax:  { nmax:50, tmin:2, tmax:6, fmin:140, fmax:320, coarse:260, narrow:150, over:175 } };
 var SEQ = {
   sag: { name:"SAGITTAL", dirName:"right", ideal:"sag_t2", fov:340,
@@ -1357,19 +1361,14 @@ var SEQ = {
          key:[["c7","C7 at the top of the FOV"],["t6","T6 · the middle of the thoracic spine"],["l1","L1 at the bottom of the FOV"],
               ["fr","Right edge of the vertebrae (right foramina)"],["fl","Left edge of the vertebrae (left foramina)"],
               ["ant","Front of the vertebral bodies"],["sp","Spinous processes"]],
-         hint:"Sagittal first. On the coronal and axial localisers, centre the stack on the spine and keep it running straight along it; add slices until it covers the vertebrae edge to edge (foramen to foramen). On the sagittal localiser, size and slide the FOV so it holds C7 at the top and L1 at the bottom (≈ 340 mm) — the cord ends about L1, and you need both junctions.",
+         hint:"Sagittal first. On the coronal and axial localisers, centre the stack on the spine and keep it running straight along it; add slices until it covers the vertebrae edge to edge (foramen to foramen). On the sagittal localiser, size and slide the FOV so it holds C7 at the top and L1 at the bottom (≈ 340 mm) — the cord ends about L1, and you need both junctions. The T-spine localiser shows neither C2 nor the sacrum: run the C-spine localiser from the protocol and plan on it to see where C7 is.",
          seqs:[
            { id:"t2",   name:"T2", why:"the cord, the CSF around it and the discs: compression, cord signal change", have:"sag_t2" },
            { id:"t1",   name:"T1", why:"marrow fat: a replaced or fractured vertebra is dark against bright fatty marrow", have:"sag_t1" },
            { id:"stir", name:"STIR", why:"fat nulled: marrow oedema and marrow lesions light up, with uniform fat suppression over a long FOV", have:"sag_stir" },
            { id:"gad",  name:"T1 FS + gadolinium", why:"tumour, infection, leptomeningeal disease — only when the request or the first images call for it" } ] },
-  cnt: { name:"COUNTING LOCALISER", dirName:"right", ideal:"cnt_t1", fov:480,
-         start:{ c:[-5,70,-170], ang:90, n:9, thk:3, gap:1, fov:400 },
-         key:[["dens","C2 · the dens (where the count starts)"],["c7","C7"],["t1","T1"],["t6","T6 (overlaps the T-spine sagittal)"]],
-         hint:"The T-spine FOV shows neither C2 nor the sacrum, so nobody can say which vertebra is which. Run a fast, large-FOV (≈ 480 mm) mid-line sagittal that reaches from C2 down into the thoracic spine: slide the box up — its top leaves the localiser, so watch <b>Levels in the FOV</b> and the preview — until it starts at the skull base and holds the dens, and keep the lower edge well inside your T-spine sagittal so the two overlap.",
-         seqs:[
-           { id:"t1",    name:"T1 (large FOV, low resolution)", why:"a 1-minute mid-line sagittal from C2 into the thoracic spine: count down from C2 and number every level", have:"cnt_t1" },
-           { id:"whole", name:"Whole-spine composed localiser", why:"the alternative on some scanners: two or three table positions stitched into one image for counting" } ] },
+  cnt: { name:"C-SPINE LOCALISER", dirName:"right", key:[], seqs:[] },
+  lsp: { name:"L-SPINE LOCALISER", dirName:"right", key:[], seqs:[] },
   ax:  { name:"AXIAL", dirName:"superior", ideal:"ax_t2", fov:200,
          start:{ c:[-5,70,-190], ang:0, n:16, thk:4, gap:1, fov:240 },
          key:[["t5","T5 · the top of the requested block"],["t9","T9 · the bottom of the requested block"],["ant","Front of the vertebral body"],
@@ -1480,10 +1479,13 @@ function clone(o){ return JSON.parse(JSON.stringify(o)); }
 function startPlan(q){ var p=clone(SEQ[q].start); p.f=frameOf(q, p.ang); delete p.ang; return p; }
 function freshState(){
   return { phase:"title", pos:null, loaded:false, loading:false, locDone:false,
-           plan:{ sag:startPlan("sag"), cnt:startPlan("cnt"), ax:startPlan("ax") },
-           done:{}, ids:{}, acq:{}, swap:{}, chosen:{ sag:{t2:1, t1:1, stir:1}, cnt:{t1:1}, ax:{t2:1, t1:1} },
-           cur:null, viewId:null, viewK:0, list:[], lv:true, counted:false };
+           plan:{ sag:startPlan("sag"), ax:startPlan("ax") },
+           done:{}, ids:{}, acq:{}, swap:{}, chosen:{ sag:{t2:1, t1:1, stir:1}, ax:{t2:1, t1:1} },
+           cur:null, viewId:null, viewK:0, list:[] };
 }
+/* an extra localiser has no plan of its own: it is shown whole, as acquired */
+function fixedPlan(x){ var s=SER[x.id]; return { c:seriesCentre(x.id), n:s.n, thk:s.thk, gap:Math.round((s.sp-s.thk)*10)/10, fov:x.fov, f:frameOf(x.task, 90) }; }
+function addFixedPlans(){ EXTRA.forEach(function(x){ S.plan[x.task]=fixedPlan(x); }); }
 var S = freshState();
 
 /* =============================================================
@@ -1531,22 +1533,6 @@ function renderSeries(id, k, cv, pl, cb){
     if(cb) cb(cr);
   });
 }
-/* vertebral level labels on a sagittal image. They are numbered only once the counting localiser has shown C2. */
-function levelLabels(cv, id, k, cr){
-  var s=SER[id]; if(s.plane!=="sag") return false;
-  if(Math.abs(s.ipp[k][0]-X0) > 11) return false;                  // only near the mid-line, where the bodies are in the slice
-  var g=cv.getContext("2d"), N=cv.width, list = s.task==="cnt" ? LVC : LV, known = s.task==="cnt" ? S.counted : S.counted;
-  g.save(); g.font=Math.max(10, Math.round(N/46))+"px ui-monospace,Consolas,monospace"; g.textBaseline="middle"; g.textAlign="right";
-  list.forEach(function(l){
-    var p=cropPt(id, k, cr, l[1]); if(p[0]<24 || p[1]<8 || p[0]>N-4 || p[1]>N-8) return;
-    var x=p[0]-N*0.045, tx = known ? l[0] : "?";
-    g.strokeStyle="rgba(255,224,138,.85)"; g.lineWidth=1; g.beginPath(); g.moveTo(x+3, p[1]); g.lineTo(p[0]-2, p[1]); g.stroke();
-    g.lineWidth=3; g.strokeStyle="rgba(0,0,0,.85)"; g.strokeText(tx, x, p[1]); g.fillStyle="#ffe08a"; g.fillText(tx, x, p[1]);
-  });
-  g.restore();
-  return true;
-}
-
 /* =============================================================
    K-SPACE (the localiser is acquired line by line)
    ============================================================= */
@@ -1633,7 +1619,8 @@ function projDir(G, d){ return [dot(d,G.row)/G.mmu, dot(d,G.col)/G.mmu]; }
 function unproj(G, x, y){ return axpy(axpy(G.ipp, G.row, x*G.mmu), G.col, y*G.mmu); }
 function f1(v){ return v.toFixed(1); }
 /* the axial tilt is set on a completed sagittal series, not on the coarse localiser */
-function canRotate(p, q){ return !(p==="sag" && needsAngle(q) && !S.swap.sag); }
+function sagOn(){ return !!S.swap.sag && SER[S.swap.sag.id].task==="sag"; }
+function canRotate(p, q){ return !(p==="sag" && needsAngle(q) && !sagOn()); }
 /* the drawable shape of plan q on panel p */
 function shapeOf(p, q){
   var G=panelGeo(p), F=frame(q), pl=S.plan[q], N=cross(G.row, G.col), t=Math.abs(dot(F.n, N)), half=pl.fov/2, cov=coverage(pl);
@@ -1700,7 +1687,7 @@ function drawOverlays(){
       else lab2 = "⟳ = angle · box = move · edges = "+(shapeOf(p, q).parallel ? "FOV" : "coverage / FOV");
     }
     CELL[p].lab2.textContent=lab2;
-    var want = S.phase==="plan" && p==="sag" && needsAngle(S.cur) && !S.swap.sag, tag=CELL[p].el.querySelector(".mre-want");
+    var want = S.phase==="plan" && p==="sag" && needsAngle(S.cur) && !sagOn(), tag=CELL[p].el.querySelector(".mre-want");
     CELL[p].lab2.style.color = want ? "var(--warn)" : "";
     CELL[p].el.classList.toggle("is-want", want);
     if(want && !tag){ tag=document.createElement("div"); tag.className="mre-want"; tag.textContent="⬇ DROP THE SAGITTAL HERE TO TILT"; CELL[p].el.appendChild(tag); }
@@ -1769,7 +1756,7 @@ function clampPlan(q){
 }
 var prevT=0;
 function schedulePreview(){ if(prevT) return; prevT=requestAnimationFrame(function(){ prevT=0; drawPreview(); }); }
-var PREV = { sag:"sag_t2", cnt:"cnt_t1", ax:"ax_t2" };
+var PREV = { sag:"sag_t2", ax:"ax_t2" };
 function drawPreview(){
   if(S.phase!=="plan") return;
   var q=S.cur, pl=S.plan[q], X=CELL.x, a=analyse(q), id=PREV[q], k=nearestSlice(id, pl.c);
@@ -1839,16 +1826,16 @@ function parseCommand(raw){
   var t=raw.trim().toLowerCase(); if(!t) return;
   logCmd(t);
   var w=t.split(/\s+/);
-  if(w[0]==="count") w[0]="cnt"; if(w[1]==="count") w[1]="cnt";
   if(t==="help"){
     log("commands here: "+COMMANDS.filter(function(c){ return c.phases.indexOf(S.phase)>=0; }).map(function(c){ return c.key; }).join(", ")+", help","sys");
-    log("workflow: choose the position (bolster | flat | arms) → load → loc → plan sag → scan → plan count → scan → use sag_t2 → plan ax → tilt → scan → finish.","sys");
+    log("workflow: choose the position (bolster | flat | arms) → load → loc → cloc (optional C-spine localiser) → plan sag → scan → use sag_t2 → plan ax → tilt → scan → finish.","sys");
     log("while planning: slices <n> · thick <mm> · gap <mm> · fov <mm> · tilt <deg> (axial, once a sagittal is on the SAG panel) · straight (sagittal stacks) · auto · scan · back","sys");
-    log("after a scan: use <series> (e.g. use sag_t2) puts it in place of its localiser · restore <sag|cor|ax> brings the localiser back · levels toggles the level labels","sys");
+    log("after a scan: use <series> (e.g. use sag_t2) puts it in place of its localiser · restore <sag|cor|ax> brings the localiser back","sys");
     return;
   }
   if(S.phase==="setup" && POS[w[0]]){ choosePos(w[0]); return; }
-  if(w[0]==="levels" && (S.phase==="view"||S.phase==="result")){ toggleLevels(); return; }
+  var xl=EXTRA.filter(function(x){ return w[0]===x.k+"loc"; })[0];
+  if(xl && (S.phase==="dash"||S.phase==="plan")){ runExtra(xl); return; }
   if(w[0]==="use" && (S.phase==="dash"||S.phase==="plan")){
     var id = SER[w[1]] ? w[1] : (SEQ[w[1]] ? Object.keys(S.acq).filter(function(i){ return SER[i].task===w[1]; })[0] : null);
     if(id && S.acq[id]) useSeries(id); else log("nothing acquired for '"+(w[1]||"")+"' yet.","warn");
@@ -1862,7 +1849,7 @@ function parseCommand(raw){
   }
   if(S.phase==="plan" && (w[0]==="tilt"||w[0]==="angle") && !isNaN(parseFloat(w[1]))){
     if(!needsAngle(S.cur)) log("the sagittal stacks stay straight along the spine — drag ⟳ on the coronal or axial panel if you need to turn one, or type: straight.","warn");
-    else if(!S.swap.sag) log("drag a completed sagittal onto the SAG panel first — you set the tilt on the real sagittal images.","warn");
+    else if(!sagOn()) log("drag a completed sagittal onto the SAG panel first — you set the tilt on the real sagittal images.","warn");
     else setAngle(S.cur, parseFloat(w[1]));
     return;
   }
@@ -1924,7 +1911,7 @@ function angleBlock(q){
       (ok ? "✓ Straight along the spine (rotation "+deg1(sagRot(q))+" on the axial, lean "+deg1(sagLean(q))+" on the coronal). This spine is straight; with a scoliosis you would turn the stack to follow the curve."
           : "The stack is turned "+deg1(sagRot(q))+" on the axial and leans "+deg1(sagLean(q))+" on the coronal — this spine runs straight, so the slices now cut across it. Drag ⟳ back, or type <b>straight</b>.")+'</div></div>';
   }
-  var a=analyse(q), sw=!!S.swap.sag;
+  var a=analyse(q), sw=sagOn();
   if(!sw){
     var ids=Object.keys(S.acq).filter(function(id){ return SER[id].task==="sag"; });
     return '<div class="mre-angbox is-bad"><b class="t">AXIAL TILT ON THE SAGITTAL · 🔒 LOCKED</b>'+
@@ -1955,27 +1942,28 @@ function renderRail(){
     railTitle.textContent="Localiser"; railDesc.textContent="3-plane gradient echo · "+C.loc.fov.toFixed(0)+" mm FOV";
     railBody.innerHTML=kvBlock([["Sequence","fast GRE · sagittal + coronal + axial"],["FOV",C.loc.fov.toFixed(0)+" mm · 256 matrix · 5 mm"],["Position",POS[S.pos].short]])+
       '<div class="scg-hint">Each image is built line by line: every phase-encode step fills one row of <b>k-space</b> (bottom right). The centre rows carry the contrast, the outer rows the fine detail — watch the image appear, then sharpen.</div>'+
-      '<div class="scg-hint">These are the study\'s own scout images. Notice what a '+C.loc.fov.toFixed(0)+' mm scout of the chest does <b>not</b> show: the skull base and C2 above, the sacrum below — nothing to count the vertebrae from.</div>';
+      '<div class="scg-hint">These are the study\'s own scout images. Notice what a '+C.loc.fov.toFixed(0)+' mm scout of the chest does <b>not</b> show: the skull base and C2 above, the sacrum below. An extra localiser of the C-spine or L-spine fixes that.</div>';
   }
   else if(p==="dash"){
-    railTitle.textContent="Protocol"; railDesc.textContent="Sagittal first — then count the levels and angle the axials";
+    railTitle.textContent="Protocol"; railDesc.textContent="Sagittal first — then angle the axials on it";
     railBody.innerHTML='<div class="mre-cards">'+TASKS.map(function(q){
-      var d=S.done[q], ok=d && planOK(q), locked=q!=="sag" && !S.done.sag,
+      var d=S.done[q], ok=d && planOK(q), locked=q==="ax" && !S.done.sag,
           names=SEQ[q].seqs.filter(function(s){ return S.chosen[q][s.id]; }).map(function(s){ return s.name; });
       return '<div class="mre-card'+(d?" is-done":"")+(locked?" is-locked":"")+'"><div class="mre-card-h"><i class="mre-sw" style="background:'+COLORS[q]+'"></i><b>'+SEQ[q].name+'</b>'+
         '<span class="mre-chip '+(d?(ok?"ok":"warn"):"")+'">'+(d?(ok?"✓ SCANNED":"⚠ SCANNED · GAPS"):(locked?"🔒 AFTER THE SAGITTAL":"○ NOT PLANNED"))+'</span></div>'+
         '<p>'+(names.length?names.join(" · "):"no sequence chosen")+'</p>'+
         (d?'<p>'+spanText(q)+' · '+S.plan[q].n+' slices'+(needsAngle(q)?' · tilt '+deg1(axTilt(q)):'')+'</p>':
-          (locked?'<p>'+(q==="ax"?"Scan the sagittal first — the axial block is tilted on those images.":"Scan the sagittal first — the counting localiser has to overlap it.")+'</p>':''))+
-        '<button class="scg-btn'+(d||locked?"":" is-primary")+'" type="button" data-q="'+q+'"'+(locked?" disabled":"")+'><span>'+(d?"RE-PLAN":"PLAN")+' '+SEQ[q].name+'</span><span class="scg-key">plan '+(q==="cnt"?"count":q)+'</span></button></div>';
-    }).join('')+'</div><div class="scg-hint">The localisers on the left show every stack you have scanned so far, in its colour.</div>'+trayBlock();
-    Array.prototype.forEach.call(railBody.querySelectorAll(".mre-card button"), function(b){ b.onclick=function(){ logCmd("plan "+(b.dataset.q==="cnt"?"count":b.dataset.q)); gotoPlan(b.dataset.q); }; });
+          (locked?'<p>Scan the sagittal first — the axial block is tilted on those images.</p>':''))+
+        '<button class="scg-btn'+(d||locked?"":" is-primary")+'" type="button" data-q="'+q+'"'+(locked?" disabled":"")+'><span>'+(d?"RE-PLAN":"PLAN")+' '+SEQ[q].name+'</span><span class="scg-key">plan '+q+'</span></button></div>';
+    }).join('')+extraBlock()+'</div><div class="scg-hint">The localisers on the left show every stack you have scanned so far, in its colour.</div>'+trayBlock();
+    Array.prototype.forEach.call(railBody.querySelectorAll(".mre-card button[data-q]"), function(b){ b.onclick=function(){ logCmd("plan "+b.dataset.q); gotoPlan(b.dataset.q); }; });
+    Array.prototype.forEach.call(railBody.querySelectorAll(".mre-card button[data-x]"), function(b){ b.onclick=function(){ var x=EXTRA.filter(function(e){ return e.k===b.dataset.x; })[0]; logCmd(x.k+"loc"); runExtra(x); }; });
     bindTray();
   }
   else if(p==="plan"){
     var q=S.cur, pl=S.plan[q], a=analyse(q), ok=planOK(q), ids=imaged(q);
     railTitle.textContent="Plan · "+SEQ[q].name; railDesc.textContent= needsAngle(q) ? "Tilt on the sagittal · size on any panel" : "Drag the box on any panel — all three stay linked";
-    railBody.innerHTML='<div class="scg-hint '+(ok?"is-ok":"is-warn")+'">'+(ok?(q==="sag"?"C7 to L1, edge to edge, straight along the spine.":q==="cnt"?"C2 is in the FOV and the stack overlaps the T-spine sagittal.":"T5 to T9 covered, square to the canal.")+" Command: <b>scan</b>":SEQ[q].hint)+'</div>'+
+    railBody.innerHTML='<div class="scg-hint '+(ok?"is-ok":"is-warn")+'">'+(ok?(q==="sag"?"C7 to L1, edge to edge, straight along the spine.":"T5 to T9 covered, square to the canal.")+" Command: <b>scan</b>":SEQ[q].hint)+'</div>'+
       angleBlock(q)+
       kvBlock([[TYPE[q]==="ax"?"Levels":"Levels in the FOV",'<b style="color:'+(a.all?"var(--accent)":"var(--warn)")+'">'+spanText(q)+'</b>'],
                ["Coverage",a.cov.toFixed(0)+" mm "+(TYPE[q]==="ax"?"along the spine":"side to side")],
@@ -1994,7 +1982,7 @@ function renderRail(){
     });
     Array.prototype.forEach.call(railBody.querySelectorAll(".mre-ang button"), function(b){
       b.onclick=function(){ var d=parseFloat(b.dataset.d), a=Math.round(axTilt(S.cur))+d; logCmd("tilt "+a);
-        if(!S.swap.sag){ log("drag a completed sagittal onto the SAG panel first — you set the tilt on the real sagittal images.","warn"); return; }
+        if(!sagOn()){ log("drag a completed sagittal onto the SAG panel first — you set the tilt on the real sagittal images.","warn"); return; }
         setAngle(S.cur, a); };
     });
     bindSeqList(); bindTray();
@@ -2010,8 +1998,7 @@ function renderRail(){
     railTitle.textContent=SEQ[vq].name+" · images"; railDesc.textContent="Scroll the slices your plan covers";
     railBody.innerHTML=kvBlock([["Series",SER[v].seq+" · "+SER[v].params],["Images",S.list.length+" of "+SER[v].n+" slices"],[TYPE[vq]==="ax"?"Levels":"Levels in the FOV",spanText(vq)],["Navigate","wheel / drag / ↑ ↓"]])+
       covBlock(vq)+'<div class="scg-hint">'+(an.all?"Everything you need from this plan is in the stack.":"Anything ticked ✗ was outside your stack or FOV — it would need another scan.")+
-      (vq==="sag" ? (S.counted ? ' The levels are numbered from your counting localiser.' : ' The vertebrae are marked <b>?</b> — nothing in this FOV says which is which. Next: <b>back</b>, then the <b>counting localiser</b>; for the axials, drag a sagittal onto the <b>SAG</b> panel to set the tilt.')
-        : vq==="cnt" ? (S.counted ? ' C2 is in the image: count down from it — every thoracic level now has a number, here and on the sagittals.' : ' C2 is not in this image, so the levels still can\'t be numbered. Re-plan it higher.')
+      (vq==="sag" ? ' Next: <b>back</b> to the protocol; for the axials, drag a sagittal onto the <b>SAG</b> panel to set the tilt.'
         : ' <b>back</b> returns to the protocol.')+'</div>';
   }
   else if(p==="result"){
@@ -2031,8 +2018,9 @@ function renderInfo(){
   CELL.x.lab.textContent=""; CELL.x.lab2.textContent="";
   info.innerHTML='<b>PROTOCOL · THORACIC SPINE</b><div>Position: '+POS[S.pos].short+' · head first · spine array</div>'+
     TASKS.map(function(q){ var d=S.done[q];
-      return '<div class="mre-row"><i class="mre-sw" style="background:'+COLORS[q]+'"></i><span><b>'+SEQ[q].name+'</b> · '+(d?(S.plan[q].n+" slices · "+spanText(q)+" · "+(planOK(q)?"✓":"⚠")):(q!=="sag"&&!S.done.sag?"after the sagittal":"not planned yet"))+'</span></div>'; }).join('')+
-    '<div style="margin-top:6px">Order matters: the <b>sagittal</b> goes first, straight along the spine from C7 to L1. The <b>counting localiser</b> then reaches up to C2 so the thoracic levels can be numbered. The <b>axial</b> block is tilted on your real sagittal images — square to the canal through the requested levels, T5 to T9.</div>'+
+      return '<div class="mre-row"><i class="mre-sw" style="background:'+COLORS[q]+'"></i><span><b>'+SEQ[q].name+'</b> · '+(d?(S.plan[q].n+" slices · "+spanText(q)+" · "+(planOK(q)?"✓":"⚠")):(q==="ax"&&!S.done.sag?"after the sagittal":"not planned yet"))+'</span></div>'; }).join('')+
+    '<div style="margin-top:6px">Order matters: the <b>sagittal</b> goes first, straight along the spine from C7 to L1. The <b>axial</b> block is then tilted on your real sagittal images — square to the canal through the requested levels, T5 to T9.</div>'+
+    (EXTRA.length?'<div>The T-spine localiser can\'t show where the spine starts or ends. The optional <b>'+EXTRA.map(function(x){ return low(x.name); }).join('</b> and <b>')+'</b> can — run one, then plan the sagittal on it.</div>':'')+
     (Object.keys(S.acq).length?'<div>Completed series can replace the localiser of the same plane — drag them in from the tray on the right.</div>':'');
 }
 
@@ -2146,24 +2134,54 @@ function gotoDash(){
   setPhase("dash");
   refreshCells();
   render();
-  if(!Object.keys(S.done).length) log("start with the <b>sagittal</b> (<b>plan sag</b>). The counting localiser and the axial unlock once it is scanned.","sys");
+  if(!Object.keys(S.done).length) log("start with the <b>sagittal</b> (<b>plan sag</b>); the axial unlocks once it is scanned."+(EXTRA.length?" Optional first: "+EXTRA.map(function(x){ return "<b>"+x.k+"loc</b> runs the "+low(x.name); }).join(", ")+".":""),"sys");
 }
 function gotoPlan(q){
-  if(q!=="sag" && !S.done.sag){ log("scan the sagittal first — "+(q==="ax"?"the axial block is tilted on those images.":"the counting localiser has to overlap it."),"warn"); return; }
+  if(!S.plan[q] || TASKS.indexOf(q)<0) return;
+  if(q==="ax" && !S.done.sag){ log("scan the sagittal first — the axial block is tilted on those images.","warn"); return; }
   S.cur=q;
   CELL.x.cv.width=CELL.x.cv.height=384;
   setPhase("plan");
   refreshCells();
   drawPreview();
   log("planning the <b>"+SEQ[q].name.toLowerCase()+"</b>: "+SEQ[q].hint,"sys");
-  if(needsAngle(q) && !S.swap.sag) log("drag a sagittal from the tray onto the <b>SAG</b> panel to unlock the tilt handle.","warn");
+  if(needsAngle(q) && !sagOn()) log("drag a sagittal from the tray onto the <b>SAG</b> panel to unlock the tilt handle.","warn");
+}
+/* ---- extra localisers (C-spine / L-spine): one click, no planning; the images then sit in the tray ---- */
+function extraBlock(){
+  return EXTRA.map(function(x){
+    var d=!!S.acq[x.id];
+    return '<div class="mre-card'+(d?" is-done":"")+'"><div class="mre-card-h"><i class="mre-sw" style="background:'+COLORS.cnt+'"></i><b>'+x.name+'</b>'+
+      '<span class="mre-chip '+(d?"ok":"")+'">'+(d?"✓ ACQUIRED":"○ OPTIONAL")+'</span></div>'+
+      '<p>Large-FOV mid-line sagittal ('+x.fov+' mm). Shows '+x.tells+'.'+(d?' It is in the tray: drag it onto the <b>SAG</b> panel to plan on it.':'')+'</p>'+
+      '<button class="scg-btn" type="button" data-x="'+x.k+'"><span>'+(d?"RE-RUN ":"RUN ")+x.name+'</span><span class="scg-key">'+x.k+'loc</span></button></div>';
+  }).join('');
+}
+var extraRunning=false;
+function runExtra(x){
+  if(extraRunning || !(S.phase==="dash"||S.phase==="plan")) return;
+  extraRunning=true;
+  var back=S.phase, s=SER[x.id], t0=performance.now(), dur=2200, secs=Math.round(30 + s.n*s.spl);
+  acqEl.classList.remove("scg-hidden"); acqTitle.textContent="ACQUIRING · "+x.name;
+  log(low(x.name)+": a fast, large-FOV sagittal — “keep still, about a minute”.","sys");
+  (function tick(now){
+    var f=Math.max(0, Math.min(1,((now||performance.now())-t0)/dur));
+    acqNum.textContent=s.seq+" · "+s.n+" slices · "+mmss(Math.round(secs*(1-f)))+" remaining";
+    if(f<1 && S.phase===back){ requestAnimationFrame(tick); return; }
+    acqEl.classList.add("scg-hidden"); extraRunning=false;
+    if(S.phase!==back) return;
+    var all=[]; for(var k=0;k<s.n;k++) all.push(k);
+    S.acq[x.id]=all;
+    log(low(x.name)+" acquired — "+s.n+" images. It shows "+x.tells+".","ok");
+    useSeries(x.id);
+  })();
 }
 /* ---- completed series can replace the localiser of the same plane ---- */
 function cellLabel(p){
   var base=NAME[p]+" LOCALISER";
   if(!S.swap[p]) return base;
   var sw=S.swap[p], s=SER[sw.id], list=S.acq[sw.id];
-  return NAME[p]+" · "+(s.task==="cnt"?"COUNT ":"")+s.seq+" (series)\nIM "+(sw.i+1)+"/"+list.length+" · scroll";
+  return (s.task==="sag"||s.task==="ax" ? NAME[p]+" · "+s.seq+" (series)" : NAME[s.task])+"\nIM "+(sw.i+1)+"/"+list.length+" · scroll";
 }
 function refreshCells(){
   PANELS.forEach(function(p){
@@ -2199,7 +2217,10 @@ function useSeries(id){
   if(!S.acq[id]) return;
   var p=SER[id].plane, list=S.acq[id];
   S.swap[p]={ id:id, i:closestIn(id, list, MID) };
-  log((SER[id].task==="cnt"?"counting ":"")+SER[id].seq+" now replaces the "+NAME[p]+" localiser"+(p==="sag"?" — opened on the mid-line. Tilt the axial block so its slices cross the canal at right angles.":" — sharper anatomy to plan on."),"ok");
+  var t=SER[id].task;
+  log(t==="sag" ? SER[id].seq+" now replaces the SAG localiser — opened on the mid-line. Tilt the axial block so its slices cross the canal at right angles."
+    : t==="ax" ? SER[id].seq+" now replaces the AX localiser — sharper anatomy to plan on."
+    : "the "+low(SEQ[t].name)+" is now on the SAG panel — your plan boxes are drawn on it in their true position.","ok");
   refreshCells(); render(); schedulePreview();
 }
 function restoreLoc(p){ delete S.swap[p]; log(NAME[p]+" localiser restored.","sys"); refreshCells(); render(); schedulePreview(); }
@@ -2211,7 +2232,7 @@ function scrollCell(p, d){
 PANELS.forEach(function(p){
   CELL[p].el.addEventListener("wheel", function(e){ if(!S.swap[p] || !(S.phase==="plan"||S.phase==="dash")) return; e.preventDefault(); scrollCell(p, e.deltaY>0?1:-1); }, { passive:false });
 });
-function thumbName(id){ return (SER[id].task==="cnt" ? "COUNT" : NAME[SER[id].plane])+' · '+SER[id].seq; }
+function thumbName(id){ var t=SER[id].task; return t==="sag"||t==="ax" ? NAME[SER[id].plane]+' · '+SER[id].seq : NAME[t]; }
 function trayBlock(){
   var ids=Object.keys(S.acq);
   if(!ids.length) return "";
@@ -2291,24 +2312,16 @@ function scanSeq(){
     ids.forEach(function(id){ var l=coveredSlices(id); S.acq[id]= l.length ? l : [nearestSlice(id, S.plan[q].c)]; });
     S.ids[q]=ids;
     Object.keys(S.swap).forEach(function(p){ var sw=S.swap[p]; if(!S.acq[sw.id]) delete S.swap[p]; else sw.i=Math.min(sw.i, S.acq[sw.id].length-1); });
-    if(q==="cnt"){
-      S.counted = inBox("cnt", LM.dens) && inBox("cnt", LM.t1);
-      log(S.counted ? "C2 is in the image — count down from it: the thoracic levels are numbered from here on." : "C2 is not in the counting localiser — the levels still can't be numbered.", S.counted?"ok":"warn");
-    }
-    if(q==="sag") log("tip: for the axials, drag a sagittal onto the SAG panel — that is where you set their tilt. And nothing here says which vertebra is which: plan the counting localiser.","sys");
+    if(q==="sag") log("tip: for the axials, drag a sagittal onto the SAG panel — that is where you set their tilt.","sys");
     log(SEQ[q].name.toLowerCase()+" acquired — "+ids.map(function(id){ return SER[id].seq+" "+S.acq[id].length+" images"; }).join(", ")+".", planOK(q)?"ok":"warn");
     showSeries(ids[0], "view");
   })();
 }
 function viewIds(){ return S.phase==="result" ? Object.keys(S.acq) : (S.ids[SER[S.viewId].task]||[S.viewId]); }
-function toggleLevels(){ S.lv=!S.lv; showButtons(); drawView(); }
 function showButtons(){
   var id=S.viewId;
-  winBtns.innerHTML=viewIds().map(function(i){ return '<button type="button" data-id="'+i+'" class="'+(i===id?"is-on":"")+'">'+(SER[i].task==="cnt"?"COUNT":NAME[SER[i].task])+' '+SER[i].seq+'</button>'; }).join('')+
-    (SER[id].plane==="sag" ? '<button type="button" class="scg-pebtn'+(S.lv?" is-on":"")+'" data-lv="1">LEVELS</button>' : '');
-  Array.prototype.forEach.call(winBtns.querySelectorAll("button"), function(b){
-    b.onclick=function(){ if(b.dataset.lv){ logCmd("levels"); toggleLevels(); } else showSeries(b.dataset.id, null); };
-  });
+  winBtns.innerHTML=viewIds().map(function(i){ var t=SER[i].task; return '<button type="button" data-id="'+i+'" class="'+(i===id?"is-on":"")+'">'+(t==="sag"||t==="ax" ? NAME[t]+' '+SER[i].seq : NAME[t])+'</button>'; }).join('');
+  Array.prototype.forEach.call(winBtns.querySelectorAll("button"), function(b){ b.onclick=function(){ showSeries(b.dataset.id, null); }; });
 }
 function showSeries(id, phase){
   S.viewId=id; S.list=S.acq[id];
@@ -2318,12 +2331,11 @@ function showSeries(id, phase){
   drawView(); render();
 }
 function drawView(){
-  var id=S.viewId, s=SER[id], q=s.task, k=S.list[S.viewK], c=sliceCentre(id,k), where, pos, drew=false;
-  renderSeries(id, k, viewCv, null, function(cr){ if(S.lv && S.viewId===id && S.list[S.viewK]===k) levelLabels(viewCv, id, k, cr); });
+  var id=S.viewId, s=SER[id], q=s.task, k=S.list[S.viewK], c=sliceCentre(id,k), where, pos;
+  renderSeries(id, k, viewCv);
   if(TYPE[q]==="ax"){ var z=bodyZ(c, s.nrm); where=levelAt(z); pos="z "+sgn(z-HH[2])+" mm from the landmark"; }
   else { where=sideName(c[0]); pos=(c[0]-X0>=0?"left ":"right ")+Math.abs(c[0]-X0).toFixed(0)+" mm"; }
-  vpTL.textContent=SEQ[q].name+" · "+s.seq+"\nIM "+(S.viewK+1)+" / "+S.list.length+"  ·  "+pos+
-    (s.plane==="sag" && S.lv ? (Math.abs(s.ipp[k][0]-X0) > 11 ? "\nlevel labels: mid-line slices only" : S.counted ? "\nlevels counted down from C2" : "\nlevels not numbered — no C2 in view yet") : "");
+  vpTL.textContent=SEQ[q].name+" · "+s.seq+"\nIM "+(S.viewK+1)+" / "+S.list.length+"  ·  "+pos;
   vpBL.textContent=where;
   vpBR.textContent="FOV "+S.plan[q].fov+" mm\nT-SPINE · 1.5 T";
 }
@@ -2353,7 +2365,6 @@ function showResult(){
       '<p>'+(TYPE[q]==="ax"?"Slices from ":"FOV from ")+spanText(q)+' ('+a.cov.toFixed(0)+' mm '+(TYPE[q]==="ax"?"along the spine":"side to side")+'). '+
       (A ? (a.angOK ? "Tilt within "+Math.abs(a.ang).toFixed(0)+"° of the block as it was acquired ("+REF.toFixed(0)+"°). " : "Tilt "+Math.abs(a.ang).toFixed(0)+"° away from square to the canal. ")
          : (a.angOK ? "Straight along the spine. " : "Turned "+deg1(sagRot(q))+" / leaning "+deg1(sagLean(q))+" off the line of the spine. "))+
-      (q==="cnt" ? (S.counted ? "C2 is in the image, so every level can be counted. " : "C2 is not in the image — the levels can't be numbered. ") : "")+
       (a.all?"All key structures covered.":"Missed: "+a.key.filter(function(k){ return !k.ok; }).map(function(k){ return k.name; }).join("; ")+".")+
       (a.narrow?" FOV too small: wrap-around.":"")+(a.coarse?" FOV too coarse.":"")+
       (a.over?" More slices than needed — extra coverage adds scan time.":"")+'</p></div></div>';
@@ -2364,13 +2375,15 @@ function showResult(){
       return '<tr class="'+(on?"is-on":"")+'"><td>'+(i===0?'<b>'+SEQ[q].name+'</b>':'')+'</td><td><b>'+s.name+'</b>'+(s.have?" ·&nbsp;shown here":"")+'</td><td>'+s.why+'</td><td>'+(on?"✓ in your protocol":(s.rec?"recommended":"optional"))+'</td></tr>';
     }).join('');
   }).join('');
-  var heroLab={ sag:"your axial block", cnt:S.counted?"counted from C2":"no C2 — levels unknown", ax:SER[S.ids.ax[0]].seq+" · mid-block" };
+  var heroLab={ sag:"your axial block", ax:SER[S.ids.ax[0]].seq+" · mid-block" };
+  var xh=EXTRA.filter(function(x){ return !!S.acq[x.id]; })[0];                     // third picture: an extra localiser, if one was run
   resultEl.innerHTML=
-    '<div><h2'+(all?'':' class="is-bad"')+'>'+(all?"C7 to L1, counted from C2, square to the canal":"Planning debrief")+'</h2>'+
-    '<div class="scg-cap">Demonstration only: how much of the thoracic spine your plans cover, whether the levels can be numbered, and how well the axial block is tilted. Position: <b>'+POS[S.pos].short+'</b> — '+POS[S.pos].note+'</div>'+
-    '<div class="mre-heroes">'+TASKS.map(function(q){ return '<div class="scg-hero"><canvas width="320" height="320" data-q="'+q+'"></canvas><div class="scg-hero-lab">'+SEQ[q].name+'\n'+heroLab[q]+'</div></div>'; }).join('')+'</div>'+
-    '<div class="scg-cap" style="margin-top:6px">On the sagittal: the top and bottom of your axial block (green), with the tilt the block was acquired at dashed. On the counting localiser: the levels, numbered down from C2. On the axial: one slice from the middle of your block.</div>'+
-    '<h2 style="margin-top:16px">Sequences to consider</h2><div class="scg-cap">A routine thoracic spine MRI pairs sagittal T1 and T2 with a fat-suppressed fluid-sensitive sagittal (STIR), plus axials through the levels in question; a counting localiser (or whole-spine scout) fixes the level numbering; gadolinium for tumour, infection or leptomeningeal disease. Highlighted rows are the ones you ticked.</div>'+
+    '<div><h2'+(all?'':' class="is-bad"')+'>'+(all?"C7 to L1, square to the canal":"Planning debrief")+'</h2>'+
+    '<div class="scg-cap">Demonstration only: how much of the thoracic spine your plans cover and how well the axial block is tilted. Position: <b>'+POS[S.pos].short+'</b> — '+POS[S.pos].note+'</div>'+
+    '<div class="mre-heroes">'+TASKS.map(function(q){ return '<div class="scg-hero"><canvas width="320" height="320" data-q="'+q+'"></canvas><div class="scg-hero-lab">'+SEQ[q].name+'\n'+heroLab[q]+'</div></div>'; }).join('')+
+      (xh?'<div class="scg-hero"><canvas width="320" height="320" data-x="'+xh.k+'"></canvas><div class="scg-hero-lab">'+xh.name+'\nyour sagittal FOV</div></div>':'')+'</div>'+
+    '<div class="scg-cap" style="margin-top:6px">On the sagittal: the top and bottom of your axial block (green), with the tilt the block was acquired at dashed. On the axial: one slice from the middle of your block.'+(xh?' On the '+low(xh.name)+': the FOV of your sagittal (orange).':'')+'</div>'+
+    '<h2 style="margin-top:16px">Sequences to consider</h2><div class="scg-cap">A routine thoracic spine MRI pairs sagittal T1 and T2 with a fat-suppressed fluid-sensitive sagittal (STIR), plus axials through the levels in question; a large-FOV localiser of the C-spine or L-spine shows where the thoracic spine starts and ends; gadolinium for tumour, infection or leptomeningeal disease. Highlighted rows are the ones you ticked.</div>'+
     '<table class="mre-tbl"><tr><th>Plan</th><th>Sequence</th><th>Shows</th><th></th></tr>'+seqRows+'</table></div>'+
     '<div class="scg-debrief">'+rows+
     '<div class="scg-drow"><i class="scg-d-'+(posOK?"ok":"warn")+'">'+(posOK?"✓":"⚠")+'</i><div><b>Position</b><p>'+POS[S.pos].note+(posOK?"":" The marker needs the arms by the sides and a bolster under the knees.")+'</p></div></div>'+
@@ -2379,21 +2392,29 @@ function showResult(){
   TASKS.forEach(function(q){
     var cv=resultEl.querySelector('canvas[data-q="'+q+'"]'), id=S.ids[q][0], list=S.acq[id], pl=clone(S.plan[q]), k;
     if(q==="sag"){ k=list[closestIn(id, list, MID)]; pl.c=[X0, 85, -194]; pl.fov=340; renderSeries(id, k, cv, pl, function(cr){ heroLines(cv, id, k, cr); }); }
-    else if(q==="cnt"){ k=list[closestIn(id, list, MID)]; pl.c=seriesCentre(id); pl.fov=480; renderSeries(id, k, cv, pl, function(cr){ levelLabels(cv, id, k, cr); }); }
     else { k=list[Math.floor(list.length/2)]; var cc=sliceCentre(id, k); pl.c=[X0, 78, cc[2]]; pl.fov=200; renderSeries(id, k, cv, pl); }
   });
-  $("mreAgain").onclick=function(){ logCmd("plan again"); S.done={}; S.ids={}; S.acq={}; S.swap={}; S.counted=false; resultEl.classList.add("scg-hidden"); achWrap.classList.add("scg-hidden"); gotoDash(); };
+  if(xh){
+    var xc=resultEl.querySelector('canvas[data-x="'+xh.k+'"]'), xl=S.acq[xh.id], xk=xl[closestIn(xh.id, xl, MID)];
+    renderSeries(xh.id, xk, xc, null, function(cr){                                  // the sagittal plan's FOV, drawn on the extra localiser
+      var g=xc.getContext("2d"), pl=S.plan.sag, F=frame("sag"), h=pl.fov/2;
+      g.save(); g.strokeStyle=COLORS.sag; g.lineWidth=2; g.beginPath();
+      [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(function(e, i){ var P=cropPt(xh.id, xk, cr, axpy(axpy([X0, pl.c[1], pl.c[2]], F.u, e[0]*h), F.v, e[1]*h)); if(i) g.lineTo(P[0],P[1]); else g.moveTo(P[0],P[1]); });
+      g.closePath(); g.stroke(); g.restore();
+    });
+  }
+  $("mreAgain").onclick=function(){ logCmd("plan again"); S.done={}; S.ids={}; S.acq={}; S.swap={}; resultEl.classList.add("scg-hidden"); achWrap.classList.add("scg-hidden"); gotoDash(); };
   resultEl.classList.remove("scg-hidden");
   achWrap.classList.toggle("scg-hidden", !all);
   if(all) playAchievement();
-  log(all?"C7 to L1 on the sagittals, levels counted from C2, axials square to the canal — marker unlocked.":"debrief ready — "+(planes?"the planning is right; the patient position is not.":"some plans have gaps, the levels aren't counted or the tilt is off."), all?"ok":"warn");
+  log(all?"C7 to L1 on the sagittals, axials square to the canal — marker unlocked.":"debrief ready — "+(planes?"the planning is right; the patient position is not.":"some plans have gaps or the tilt is off."), all?"ok":"warn");
   drawOverlays();
 }
 var CREDITS = '<b>Imaging:</b> adapted from Cancer Moonshot Biobank (2022), <i>Cancer Moonshot Biobank – Multiple Myeloma Collection (CMB-MML)</i> (Version 11) [dataset], The Cancer Imaging Archive, '+
-  '<a href="https://doi.org/10.7937/szkb-sw39" target="_blank" rel="noopener">doi:10.7937/szkb-sw39</a> (CC BY 4.0). Data used in this publication were generated by the National Cancer Institute\'s Cancer Moonshot Biobank. One de-identified research participant, thoracic spine MRI at 1.5 T: '+
-  '3-plane scout, sagittal T1 / T2 / STIR, axial T2 / T1 and a large-FOV sagittal T1 counting localiser. The clinical request shown in the simulator is fictional, and nothing here describes or interprets what the images show. '+
-  '<b>Changes made:</b> pixel values windowed to 8-bit JPEG / PNG (axials resampled to 384 px); one image per plane of the scout is used as the localiser; the counting localiser was acquired at a second table position and has been <b>rigidly registered</b> onto the T-spine sagittals (the patient lies slightly differently, so it matches to a few millimetres); '+
-  'vertebral levels were counted down from C2 on the counting localiser and marked by hand (± 5 mm) — <b>not yet checked by a radiologist</b>; the post-contrast series of the study are not used. Each scan shows the acquired slices that fall inside your stack, cropped to your FOV; your tilt doesn\'t re-slice the images — it is graded against the tilt the block was acquired at (± '+TOL+'°). The patient position doesn\'t change the images. The 3-D room shows a generic closed-bore magnet. '+
+  '<a href="https://doi.org/10.7937/szkb-sw39" target="_blank" rel="noopener">doi:10.7937/szkb-sw39</a>, <a href="https://www.cancerimagingarchive.net/collection/cmb-mml/" target="_blank" rel="noopener">cancerimagingarchive.net/collection/cmb-mml/</a> (CC BY 4.0). Data used in this publication were generated by the National Cancer Institute\'s Cancer Moonshot Biobank. One de-identified research participant, thoracic spine MRI at 1.5 T: '+
+  '3-plane scout, sagittal T1 / T2 / STIR, axial T2 / T1 and a large-FOV sagittal T1 that reaches the skull base (the C-spine localiser here). The clinical request shown in the simulator is fictional, and nothing here describes or interprets what the images show. '+
+  '<b>Changes made:</b> pixel values windowed to 8-bit JPEG / PNG (axials resampled to 384 px); one image per plane of the scout is used as the localiser; the C-spine localiser was acquired at a second table position and has been <b>rigidly registered</b> onto the T-spine sagittals (the patient lies slightly differently, so it matches to a few millimetres); '+
+  'the vertebral level names in the read-outs were counted down from C2 on that localiser and marked by hand (± 5 mm) — <b>not yet checked by a radiologist</b>; the post-contrast series of the study are not used. Each scan shows the acquired slices that fall inside your stack, cropped to your FOV; your tilt doesn\'t re-slice the images — it is graded against the tilt the block was acquired at (± '+TOL+'°). The patient position doesn\'t change the images. The 3-D room shows a generic closed-bore magnet. '+
   'Sequences without images are listed for teaching only. Educational simulation — not a medical device.';
 /* your axial block (solid: its top and bottom slices) and the acquired tilt (dashed), on the sagittal hero image */
 function heroLines(cv, id, k, cr){
@@ -2411,7 +2432,7 @@ function heroLines(cv, id, k, cr){
   line(axpy(c, n, -h), u, COLORS.ax, false);
 }
 function resetAll(){
-  S=freshState();
+  S=freshState(); addFixedPlans();
   resultEl.classList.add("scg-hidden"); achWrap.classList.add("scg-hidden");
   logEl.innerHTML=""; gotoSetup();
 }
@@ -2421,7 +2442,8 @@ function resetAll(){
    ============================================================= */
 $("scgStart").onclick=function(){ titleEl.classList.add("scg-hidden"); gotoSetup(); };
 window.__mrs={ S:function(){ return S; }, parse:parseCommand, useSeries:useSeries, analyse:analyse, planOK:planOK, gotoPlan:gotoPlan,
-               autoPlan:autoPlan, setAngle:setAngle, angErr:angErr, axTilt:axTilt, shapeOf:shapeOf, REF:REF, scanSeq:scanSeq, showResult:showResult };
+               autoPlan:autoPlan, setAngle:setAngle, runExtra:runExtra, EXTRA:EXTRA, angErr:angErr, axTilt:axTilt, shapeOf:shapeOf, REF:REF, scanSeq:scanSeq, showResult:showResult };
+addFixedPlans();
 setPhase("title");
 })();
 
